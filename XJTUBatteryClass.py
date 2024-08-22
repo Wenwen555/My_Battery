@@ -17,10 +17,12 @@ Wang, F., Zhai, Z., Zhao, Z. et al. Physics-informed neural network for lithium-
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.io import loadmat
 from scipy import interpolate
 import os
 import functools
+import pickle
 
 def interpolate_resample(resample=True, num_points=128):
     '''
@@ -45,7 +47,7 @@ def interpolate_resample(resample=True, num_points=128):
 
 
 class Battery:
-    def __init__(self,path):
+    def __init__(self, path):
         mat = loadmat(path)
         self.data = mat['data']
         self.battery_name = path.split('/')[-1].split('.')[0]
@@ -98,7 +100,7 @@ class Battery:
         '''
         # 获取测量容量的cycle
         test_capacity_cycles = []
-        for i in range(1,self.cycle_life+1):
+        for i in range(1, self.cycle_life+1):
             des = self.get_one_cycle_description(i)
             if 'test capacity' in des:
                 test_capacity_cycles.append(i)
@@ -108,11 +110,11 @@ class Battery:
         test_capacity = capacity[index]
 
         # 利用插值法获取所有cycle的容量
-        cycle = np.arange(1,self.cycle_life+1)
+        cycle = np.arange(1, self.cycle_life+1)
         try:
-            f = interpolate.interp1d(test_capacity_cycles,test_capacity,kind='cubic',fill_value='extrapolate')
+            f = interpolate.interp1d(test_capacity_cycles, test_capacity, kind='cubic',fill_value='extrapolate')
         except:
-            f = interpolate.interp1d(test_capacity_cycles,test_capacity,kind='linear',fill_value='extrapolate')
+            f = interpolate.interp1d(test_capacity_cycles, test_capacity, kind='linear',fill_value='extrapolate')
         degradation_trajectory = f(cycle)
         return degradation_trajectory #,(np.array(test_capacity_cycles),test_capacity)
 
@@ -124,7 +126,7 @@ class Battery:
         capacity = self.summary[0][0][1].reshape(-1)
         return capacity
 
-    def get_value(self,cycle,variable):
+    def get_value(self,cycle, variable):
         '''
         从cycle中提取出variable的数据
         :param cycle: int: 电池的循环次数
@@ -144,7 +146,7 @@ class Battery:
 
     # 如果需要重采样，则取消下面这行注释
     # @interpolate_resample(resample=False,num_points=128)
-    def get_partial_value(self,cycle,variable,stage=1):
+    def get_partial_value(self, cycle, variable, stage=1):
         '''
         从cycle中提取出variable的stage阶段的数据
         :param cycle: int: 电池的循环次数
@@ -199,6 +201,15 @@ class Battery:
         value = value[index]
         return value
 
+    # 如果需要重采样，则取消下面这行注释
+    # @interpolate_resample(resample=True, num_points=3052)
+    def get_CCCV_value(self, cycle, variable, current_range=None):
+        CCCV_df = np.concatenate((self.get_CC_value(cycle, variable), self.get_CV_value(cycle, variable)), axis=0)
+        if CCCV_df.shape[0] < 1500:
+            print(f"cycle:{cycle}, variable:{variable}")
+            print('len is: ', CCCV_df.shape[0])
+        return CCCV_df
+
     def get_one_cycle(self,cycle):
         '''
         获取某个cycle的所有通道数据
@@ -241,7 +252,7 @@ class Battery:
         dV = np.diff(V_new)
         IC = dQ/dV
 
-        return IC,V_new[1:]
+        return IC, V_new[1:]
 
     def get_IC_curve2(self,cycle,voltage_range=[3.6,4.19],step_len=0.01):
         '''
@@ -270,12 +281,52 @@ class Battery:
         return IC,V_new[1:]
 
 
+def save_all_battery2pkl(filepath, all_battery):
+    # Note that all_battery is a dictionary contains different Battery.
+    with open(filepath, 'wb') as fp:
+        pickle.dump(all_battery, fp)
+    print("file to pkl finished!")
+
+
 if __name__ == '__main__':
     # 一个简单的例子
-    battery_path = r'..\Batch-1\2C_battery-1.mat'
-    battery = Battery(battery_path)
-    IC1,V1 = battery.get_IC_curve1(cycle=10,voltage_range=[3.6,4.19])
 
-    import matplotlib.pyplot as plt
-    plt.plot(V1,IC1)
-    plt.show()
+    folder_path = r'../cell_data/Battery Dataset/Batch-2'
+    save_path = 'data/'
+    # 现在假设每次均取一个batch
+    key_name = ['current_A', 'voltage_V', 'capacity_Ah', 'temperature_C']
+
+    batch_dict = {}
+    battery_average_len = []
+
+    for filename in os.listdir(folder_path):
+        one_battery_len = []
+        filepath = os.path.join(folder_path, filename)
+        battery = Battery(filepath)
+        print(filename)
+        one_battery_dict = {}
+        one_battery_dict['summary'] = []
+        one_battery_dict['cycle'] = {}
+        final_cyc = 0
+        for cyc in range(2, battery.cycle_life):
+            one_battery_dict['cycle'][cyc-1] = {}
+            one_battery_len.append(battery.get_CCCV_value(cyc,'current_A').shape[0])
+            for key in key_name:
+                one_battery_dict['cycle'][cyc-1][key] = battery.get_CCCV_value(cyc, key)
+            one_battery_dict['summary'].append(battery.summary['discharge_capacity_Ah'][0][0][cyc][0])
+            final_cyc = cyc
+        one_battery_dict['cycle'][final_cyc] = {}
+        for key in key_name:
+            one_battery_dict['cycle'][final_cyc][key] = battery.get_CCCV_value(0, key)
+        one_battery_dict['summary'].append(battery.summary['discharge_capacity_Ah'][0][0][0][0])  # 第三个位置的0表示最后一个cycle
+        one_battery_len.append(battery.get_CCCV_value(0, 'current_A').shape[0])
+        battery_average_len.append(sum(one_battery_len) / len(one_battery_len))
+
+        batch_dict[filename.rstrip(".mat")] = one_battery_dict
+
+    os.makedirs(save_path, exist_ok=True)
+    filepath = os.path.join(save_path, 'XJTU_batch2_prepocess.pkl')
+    save_all_battery2pkl(filepath, batch_dict)
+
+    # IC1, V1 = battery.get_IC_curve1(cycle=10, voltage_range=[3.6, 4.19])
+

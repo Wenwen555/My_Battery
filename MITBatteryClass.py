@@ -6,26 +6,76 @@ Github: https://github.com/wang-fujin
 Description:
 该代码用于读取MIT电池数据集，方便后续预处理和分析。
 '''
+import pickle
 
 import pandas as pd
 import numpy as np
 import h5py
 import pprint
 import matplotlib.pyplot as plt
+import functools
+from tqdm import tqdm
+
+from scipy import interpolate
+from scipy.signal import resample
+
+
+
+def interpolate_resample(resample=True, num_points=128):
+    '''
+    插值重采样装饰器,如果resample为True，那么就进行插值重采样，点数为num_points,默认为128；
+    否则就不进行重采样
+    :param resample: bool: 是否进行重采样
+    :param num_points: int: 重采样的点数
+    :return:
+    '''
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self,*args, **kwargs):
+            data = func(self,*args, **kwargs)
+
+            new_df = pd.DataFrame()
+            if resample:
+                x = np.linspace(0, 1, data.shape[0])
+                new_x = np.linspace(0, 1, num_points)
+                for k in data:
+                    try:
+                        f1 = interpolate.interp1d(x, data[k], kind='linear')
+                        new_df[k] = f1(new_x)
+                    except ValueError:
+                        print(data.shape[0])
+            return new_df
+        return wrapper
+    return decorator
 
 
 class BatchBattery:
-    def __init__(self,path):
+    def __init__(self, path):
         self.path = path
         self.f = h5py.File(path, 'r')
         self.batch = self.f['batch']
-        self.date = self.f['batch_date'].value.tobytes()[::2].decode()
+        self.date = self.f['batch_date'][:].tobytes()[::2].decode()
         self.num_cells = self.batch['summary'].shape[0]
+        self.exclude = {}
+        for idx in range(self.num_cells):
+            self.exclude[idx] = []
 
-        print('date: ',self.date)
-        print('num_cells: ',self.num_cells)
+        print('date: ', self.date)
+        print('num_cells: ', self.num_cells)
 
-    def get_one_battery(self,cell_num):
+    def get_cell_nums(self):
+        return self.num_cells
+
+    def get_one_battery_cycle_num(self, cell_num):
+        _, bat_cycle_dict = self.get_one_battery(cell_num)
+        return len(bat_cycle_dict)
+
+    def get_one_battery_one_cycle_Qd(self, cell_num, cycle_num):
+        summary, _ = self.get_one_battery(cell_num)
+        return summary['QD'][cycle_num]
+
+    def get_one_battery(self, cell_num):
         '''
         读取一个电池的数据
         :param cell_num: 电池序号
@@ -34,8 +84,8 @@ class BatchBattery:
         i = cell_num
         f = self.f
         batch = self.batch
-        cl = self.f[batch['cycle_life'][i, 0]].value[0][0]
-        policy = self.f[batch['policy_readable'][i, 0]].value.tobytes()[::2].decode()
+        cl = self.f[batch['cycle_life'][i, 0]][:][0][0]
+        policy = self.f[batch['policy_readable'][i, 0]][:].tobytes()[::2].decode()
         # barcode = self.f[batch['barcode'][i, 0]].value.tobytes()[::2].decode()
         # channel_ID = self.f[batch['channel_id'][i, 0]].value.tobytes()[::2].decode()
         # summary_IR = np.hstack(self.f[batch['summary'][i, 0]]['IR'][0, :].tolist())
@@ -54,18 +104,18 @@ class BatchBattery:
         # 解析cycle的数据
         cycle_dict = {}
         for j in range(1,cycles['I'].shape[0]):
-            I = np.hstack((f[cycles['I'][j, 0]].value))
-            V = np.hstack((f[cycles['V'][j, 0]].value))
-            Qc = np.hstack((f[cycles['Qc'][j, 0]].value))
-            Qd = np.hstack((f[cycles['Qd'][j, 0]].value))
-            t = np.hstack((f[cycles['t'][j, 0]].value))
+            I = np.hstack((f[cycles['I'][j, 0]][:]))
+            V = np.hstack((f[cycles['V'][j, 0]][:]))
+            Qc = np.hstack((f[cycles['Qc'][j, 0]][:]))
+            Qd = np.hstack((f[cycles['Qd'][j, 0]][:]))
+            t = np.hstack((f[cycles['t'][j, 0]][:]))
             one_cycle = {'current (A)': I, 'voltage (V)': V, 'charge Q (Ah)': Qc,
                          'discharge Q (Ah)': Qd, 'time (min)': t}
             cycle_dict[j] = one_cycle
 
-        return summary,cycle_dict
+        return summary, cycle_dict
 
-    def get_one_battery_one_cycle(self,cell_num,cycle_num):
+    def get_one_battery_one_cycle(self,cell_num, cycle_num):
         '''
         读取一个电池的某个cycle的数据
         :param cell_num: 电池序号
@@ -83,13 +133,14 @@ class BatchBattery:
 
         # 解析cycle的数据
         j = cycle_num
-        I = np.hstack((f[cycles['I'][j, 0]].value))
-        V = np.hstack((f[cycles['V'][j, 0]].value))
-        Qc = np.hstack((f[cycles['Qc'][j, 0]].value))
-        Qd = np.hstack((f[cycles['Qd'][j, 0]].value))
-        t = np.hstack((f[cycles['t'][j, 0]].value))
+        I = np.hstack((f[cycles['I'][j, 0]][:]))
+        V = np.hstack((f[cycles['V'][j, 0]][:]))
+        Qc = np.hstack((f[cycles['Qc'][j, 0]][:]))
+        Qd = np.hstack((f[cycles['Qd'][j, 0]][:]))
+        t = np.hstack((f[cycles['t'][j, 0]][:]))
+        T = np.hstack((f[cycles['T'][j, 0]][:]))
         one_cycle = {'current (A)': I, 'voltage (V)': V, 'charge Q (Ah)': Qc,
-                     'discharge Q (Ah)': Qd, 'time (min)': t}
+                     'discharge Q (Ah)': Qd, 'time (min)': t, 'Temperature': T}
         cycle_df = pd.DataFrame(one_cycle)
         return cycle_df
 
@@ -100,8 +151,8 @@ class BatchBattery:
         :param cycle_num: int: cycle序号
         :return: DataFrame
         '''
-        cycle_df = self.get_one_battery_one_cycle(cell_num,cycle_num)
-        cycle_df = cycle_df[cycle_df['current (A)'] > -1e-3]
+        cycle_df = self.get_one_battery_one_cycle(cell_num, cycle_num)
+        cycle_df = cycle_df[cycle_df['current (A)'] > -2e-1]
         index = cycle_df.index
         # 判断index是否连续。如果index分段连续，则取第一段index
         diff = np.diff(index)
@@ -117,45 +168,79 @@ class BatchBattery:
         # plt.show()
         return cycle_df
 
-    def get_one_battery_one_cycle_CCCV_stage(self,cell_num,cycle_num):
+    @interpolate_resample(resample=True, num_points=303)
+    def get_one_battery_one_cycle_CCCV_stage(self, cell_num, cycle_num):
         '''
         读取某个电池的某个cycle的CCCV阶段的数据（SOC>80%的数据）
         :param cell_num: int: 电池序号
         :param cycle_num: int: cycle序号
         :return: DataFrame
         '''
-        charge_df = self.get_one_battery_one_cycle_charge(cell_num,cycle_num)
-        rough_CCCV_df = charge_df[charge_df['charge Q (Ah)'] >= 0.79*charge_df['charge Q (Ah)'].max()]
+        charge_df = self.get_one_battery_one_cycle_charge(cell_num, cycle_num)
+        rough_CCCV_df = charge_df[charge_df['charge Q (Ah)'] >= 0.77 * charge_df['charge Q (Ah)'].max()]
+        # rough_more_CCCV_df = charge_df[charge_df['charge Q (Ah)'] >= 0.70*charge_df['charge Q (Ah)'].max()]
         CCCV_df = rough_CCCV_df[rough_CCCV_df['current (A)'] > 0.01]
-
-
+        # CCCV_more_df = rough_more_CCCV_df[rough_more_CCCV_df['current (A)'] > 0.001]
         diff = np.diff(CCCV_df.index)
+        # charge_df.plot(x='time (min)',y='current (A)',c='r',linewidth=2)
+        # plt.tight_layout()
+        # plt.show()
+        #
+        # rough_CCCV_df.plot(x='time (min)', y='current (A)', c='r', linewidth=2)
+        # plt.tight_layout()
+        # plt.show()
         continuous_index = np.where(diff != 1)[0]
 
         if len(continuous_index) > 0:
             start_index = CCCV_df.index[continuous_index[0] + 1]
             CCCV_df = CCCV_df.loc[start_index:]
 
-        # CCCV_df.plot(x='time (min)',y='current (A)',c='r',linewidth=2)
-        # plt.tight_layout()
-        # plt.show()
+        if CCCV_df.shape[0] < 50:
+            # print(CCCV_df)
+            # if rough_CCCV_df.shape[0] < 50:
+            print(f"{cell_num}: {cycle_num} using rough CCCV data!")
+            # self.exclude[cell_num].append(cycle_num)
+            return rough_CCCV_df
+            # else:
+            # print(f"do not cut CCCV_df at {cell_num}: {cycle_num}, pick rough one.")
+            # CCCV_df.plot(x='time (min)', y='current (A)', c='b', linewidth=2)
+            # plt.tight_layout()
+            # plt.show()
+            # print(charge_df)
+            # charge_df.plot(x='time (min)', y='current (A)', c='b', linewidth=2)
+            # plt.tight_layout()
+            # plt.show()
+            #     # print("CCCV_df len :", len(CCCV_df), "Rough_CCCV_df len :", len(rough_CCCV_df))
+            #     CCCV_df = rough_CCCV_df
+            #     return CCCV_df
+        return CCCV_df
+        # return CCCV_df
+
+    def get_one_battery_one_cycle_CCCV_stage_raw(self, cell_num, cycle_num):
+        '''
+        读取某个电池的某个cycle的CCCV阶段的数据（SOC>80%的数据）
+        :param cell_num: int: 电池序号
+        :param cycle_num: int: cycle序号
+        :return: DataFrame
+        '''
+        charge_df = self.get_one_battery_one_cycle_charge(cell_num, cycle_num)
+        rough_CCCV_df = charge_df[charge_df['charge Q (Ah)'] >= 0.79*charge_df['charge Q (Ah)'].max()]
+        CCCV_df = rough_CCCV_df[rough_CCCV_df['current (A)'] > 0.01]
+
+        diff = np.diff(CCCV_df.index)
+
+        continuous_index = np.where(diff != 1)[0]
+
+        if len(continuous_index) > 0:
+            start_index = CCCV_df.index[continuous_index[0] + 1]
+            CCCV_df = CCCV_df.loc[start_index:]
+
         # CCCV_df.plot(x='time (min)',y='voltage (V)',c='b',linewidth=2)
         # plt.tight_layout()
         # plt.show()
 
         return CCCV_df
 
-    def get_one_battery_one_cycle_CC_stage(self,cell_num,cycle_num,voltage_range=[3.4,3.595]):
-        '''
-        读取某个电池的某个cycle的CC阶段的数据（SOC>80%的数据）
-        :param cell_num: int: 电池序号
-        :param cycle_num: int: cycle序号
-        :param voltage_range: tuple: 电压范围, 如 [3.4,3.595]
-        :return: DataFrame
-        '''
-        CCCV_df = self.get_one_battery_one_cycle_CCCV_stage(cell_num,cycle_num)
-        CC_df = CCCV_df[(CCCV_df['voltage (V)'] > voltage_range[0]) & (CCCV_df['voltage (V)'] < voltage_range[1])]
-        return CC_df
 
     def get_one_battery_one_cycle_CV_stage(self,cell_num,cycle_num,current_range=[0.5,0.1]):
         '''
@@ -170,6 +255,7 @@ class BatchBattery:
         if current_range is not None:
             CV_df = CV_df[(CV_df['current (A)'] > current_range[1]) & (CV_df['current (A)'] < current_range[0])]
         return CV_df
+
 
     def plot_one_battery_one_cycle_CCCV_stage(self,cell_num,cycle_num):
         '''
@@ -229,22 +315,61 @@ class BatchBattery:
         plt.tight_layout()
         plt.show()
 
+    def save_all_battery2pkl(self, all_battery):
+        # Note that all_battery is a dictionary contains different Battery.
+        with open('batch2_prepocess.pkl', 'wb') as fp:
+            pickle.dump(all_battery, fp)
+        print("file to pkl finished!")
+
 
 if __name__ == '__main__':
     # 一个简单的例子
-    path = '../2017-06-30_batchdata_updated_struct_errorcorrect.mat'
-    battery = 5
-    cycle_num = 300
+    path = '../cell_data/mit_dataset/2018-04-12_batchdata_updated_struct_errorcorrect.mat'  # Batch 3
 
     bb = BatchBattery(path)
-    summary,cycle = bb.get_one_battery(battery)
-    pprint.pprint(summary)
+    cell_nums = bb.get_cell_nums()
+    all_battery = {}
+    for bat_idx in tqdm(range(cell_nums), total=cell_nums):
+        one_battery = {}
+        one_battery['summary'] = []
+        one_battery['cycle'] = {}
+        summary, _ = bb.get_one_battery(bat_idx)
+        # one_battery['cycle_raw'] = {}
+        for cyc in range(1, int(bb.get_one_battery_cycle_num(bat_idx)) + 1):
+            one_battery['cycle'][cyc-1] = bb.get_one_battery_one_cycle_CCCV_stage(bat_idx, cyc)
+            one_battery['summary'].append(summary['QD'][cyc-1])
+            # one_battery['cycle_raw'][cyc-1] = bb.get_one_battery_one_cycle_CCCV_stage_raw(bat_idx, cyc)
+            # if one_battery['cycle_raw'][cyc-1].shape[0] < 10:
+            #     fig, axes = plt.subplots(3, 1, figsize=(8, 6), dpi=200)
+            #     axes[0].plot(one_battery['cycle_raw'][cyc - 1]['current (A)'])
+            #     axes[0].set_ylabel('raw data')
+            #     axes[1].plot(one_battery['cycle'][cyc - 1]['current (A)'])
+            #     axes[1].set_ylabel('scipy interpolate')
+            #     axes[2].plot(resample(one_battery['cycle_raw'][cyc-1]['current (A)'], 278))
+            #     axes[2].set_ylabel('Fourier')
+            #     fig.suptitle("Current")
+            #     plt.tight_layout()
+            #     plt.show()
+        # for cyc in range(1, int(bb.get_one_battery_cycle_num(bat_idx)) + 1):
+        #     if cyc not in bb.exclude[bat_idx]:
+        #         one_battery['summary'].append(summary['QD'][cyc - 1])
+        #
+        # one_battery['summary'] = pd.DataFrame(one_battery['summary'])
+        all_battery[bat_idx] = one_battery
+        assert len(one_battery['cycle']) == len(one_battery['summary']), bat_idx
+    # bb.save_all_battery2pkl(all_battery=all_battery)
+    # average_len_over1bat = []
+    # for bat_idx in range(cell_nums):
+    #     sum = 0
+    #     for cyc in range(1, len(all_battery[bat_idx]['cycle']) + 1):
+    #         sum += all_battery[bat_idx]['cycle'][cyc-1]['current (A)'].shape[0]
+    #     sum /= len(all_battery[bat_idx]['cycle'])
+    #     average_len_over1bat.append(sum)
+    # print(1)
 
-    cycle_df = bb.get_one_battery_one_cycle(battery,cycle_num)
-    print(cycle_df.head())
 
-    CCCV_df = bb.get_one_battery_one_cycle_CCCV_stage(battery,cycle_num)
-    bb.plot_one_battery_one_cycle_CCCV_stage(battery,cycle_num)
+    # cycle_num = 10
+    # bb.plot_one_battery_one_cycle_CCCV_stage(all_battery[0], cycle_num)
 
 
 
