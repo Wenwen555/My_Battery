@@ -264,28 +264,56 @@ class BatchBattery:
         :param cycle_num: int: cycle序号
         :return: None
         '''
-        CC_df = self.get_one_battery_one_cycle_CC_stage(cell_num,cycle_num)
-        CV_df = self.get_one_battery_one_cycle_CV_stage(cell_num,cycle_num,current_range=None)
+        CCCV_df = self.get_one_battery_one_cycle_CCCV_stage(cell_num,cycle_num)
+        # CV_df = self.get_one_battery_one_cycle_CV_stage(cell_num,cycle_num,current_range=None)
 
         fig,axes = plt.subplots(4,1,figsize=(6,6),dpi=200)
-        axes[0].plot(CC_df['time (min)'],CC_df['current (A)'],c='r',linewidth=2)
-        axes[0].plot(CV_df['time (min)'],CV_df['current (A)'],c='b',linewidth=2)
-        axes[0].axvline(x=CC_df['time (min)'].values[-1],c='g',linewidth=1,linestyle='--')
+        axes[0].plot(CCCV_df['time (min)'],CCCV_df['current (A)'],c='r',linewidth=2)
+        # axes[0].plot(CV_df['time (min)'],CV_df['current (A)'],c='b',linewidth=2)
+        axes[0].axvline(x=CCCV_df['time (min)'].values[-1],c='g',linewidth=1,linestyle='--')
         axes[0].set_ylabel('current (A)')
 
-        axes[1].plot(CC_df['time (min)'],CC_df['voltage (V)'],c='r',linewidth=2)
-        axes[1].plot(CV_df['time (min)'],CV_df['voltage (V)'],c='b',linewidth=2)
-        axes[1].axvline(x=CC_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[1].plot(CCCV_df['time (min)'],CCCV_df['voltage (V)'],c='r',linewidth=2)
+        axes[1].axvline(x=CCCV_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
         axes[1].set_ylabel('voltage (V)')
 
-        axes[2].plot(CC_df['time (min)'],CC_df['charge Q (Ah)'],c='r',linewidth=2)
-        axes[2].plot(CV_df['time (min)'],CV_df['charge Q (Ah)'],c='b',linewidth=2)
-        axes[2].axvline(x=CC_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[2].plot(CCCV_df['time (min)'],CCCV_df['charge Q (Ah)'],c='r',linewidth=2)
+        axes[2].axvline(x=CCCV_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
         axes[2].set_ylabel('charge Q (Ah)')
 
-        axes[3].plot(CC_df['time (min)'],CC_df['discharge Q (Ah)'],c='r',linewidth=2)
-        axes[3].plot(CV_df['time (min)'],CV_df['discharge Q (Ah)'],c='b',linewidth=2)
-        axes[3].axvline(x=CC_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[3].plot(CCCV_df['time (min)'],CCCV_df['discharge Q (Ah)'],c='r',linewidth=2)
+        axes[3].axvline(x=CCCV_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[3].set_ylabel('discharge Q (Ah)')
+        axes[3].set_xlabel('time (min)')
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_one_battery_one_cycle_150_to_500_stage(self,cell_num,cycle_num):
+        '''
+        在一个4行1列的图中画出一个电池的某个cycle的150-500阶段的数据
+        :param cell_num: int: 电池序号
+        :param cycle_num: int: cycle序号
+        :return: None
+        '''
+        charge_df = self.get_one_battery_one_cycle_charge(cell_num,cycle_num)
+
+        fig,axes = plt.subplots(4,1,figsize=(6,6),dpi=200)
+        axes[0].plot(charge_df['time (min)'][150:500], charge_df['current (A)'][150:500], c='r', linewidth=2)
+        axes[0].axvline(x=charge_df['time (min)'].values[-1],c='g',linewidth=1,linestyle='--')
+        axes[0].set_ylabel('current (A)')
+
+        axes[1].plot(charge_df['time (min)'][150:500],charge_df['voltage (V)'][150:500],c='r',linewidth=2)
+        axes[1].axvline(x=charge_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[1].set_ylabel('voltage (V)')
+
+        axes[2].plot(charge_df['time (min)'][150:500],charge_df['charge Q (Ah)'][150:500],c='r',linewidth=2)
+        axes[2].axvline(x=charge_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
+        axes[2].set_ylabel('charge Q (Ah)')
+
+        axes[3].plot(charge_df['time (min)'][150:500],charge_df['discharge Q (Ah)'][150:500],c='r',linewidth=2)
+        axes[3].axvline(x=charge_df['time (min)'].values[-1], c='g', linewidth=1, linestyle='--')
         axes[3].set_ylabel('discharge Q (Ah)')
         axes[3].set_xlabel('time (min)')
 
@@ -324,9 +352,13 @@ class BatchBattery:
 
 if __name__ == '__main__':
     # 一个简单的例子
-    path = '../cell_data/mit_dataset/2018-04-12_batchdata_updated_struct_errorcorrect.mat'  # Batch 3
+
+    path = 'data/mit/download'  # Batch 3
 
     bb = BatchBattery(path)
+
+    # bb.plot_one_battery_one_cycle_CCCV_stage(2,1)
+    # bb.plot_one_battery_one_cycle_150_to_500_stage(2,1)
     cell_nums = bb.get_cell_nums()
     all_battery = {}
     for bat_idx in tqdm(range(cell_nums), total=cell_nums):
@@ -334,22 +366,22 @@ if __name__ == '__main__':
         one_battery['summary'] = []
         one_battery['cycle'] = {}
         summary, _ = bb.get_one_battery(bat_idx)
-        # one_battery['cycle_raw'] = {}
+        one_battery['cycle_raw'] = {}
         for cyc in range(1, int(bb.get_one_battery_cycle_num(bat_idx)) + 1):
             one_battery['cycle'][cyc-1] = bb.get_one_battery_one_cycle_CCCV_stage(bat_idx, cyc)
             one_battery['summary'].append(summary['QD'][cyc-1])
-            # one_battery['cycle_raw'][cyc-1] = bb.get_one_battery_one_cycle_CCCV_stage_raw(bat_idx, cyc)
-            # if one_battery['cycle_raw'][cyc-1].shape[0] < 10:
-            #     fig, axes = plt.subplots(3, 1, figsize=(8, 6), dpi=200)
-            #     axes[0].plot(one_battery['cycle_raw'][cyc - 1]['current (A)'])
-            #     axes[0].set_ylabel('raw data')
-            #     axes[1].plot(one_battery['cycle'][cyc - 1]['current (A)'])
-            #     axes[1].set_ylabel('scipy interpolate')
-            #     axes[2].plot(resample(one_battery['cycle_raw'][cyc-1]['current (A)'], 278))
-            #     axes[2].set_ylabel('Fourier')
-            #     fig.suptitle("Current")
-            #     plt.tight_layout()
-            #     plt.show()
+            one_battery['cycle_raw'][cyc-1] = bb.get_one_battery_one_cycle_CCCV_stage_raw(bat_idx, cyc)
+
+            fig, axes = plt.subplots(3, 1, figsize=(8, 6), dpi=200)
+            axes[0].plot(one_battery['cycle_raw'][cyc - 1]['current (A)'])
+            axes[0].set_ylabel('raw data')
+            axes[1].plot(one_battery['cycle'][cyc - 1]['current (A)'])
+            axes[1].set_ylabel('scipy interpolate')
+            axes[2].plot(resample(one_battery['cycle_raw'][cyc-1]['current (A)'], 278))
+            axes[2].set_ylabel('Fourier')
+            fig.suptitle("Current")
+            plt.tight_layout()
+            plt.show()
         # for cyc in range(1, int(bb.get_one_battery_cycle_num(bat_idx)) + 1):
         #     if cyc not in bb.exclude[bat_idx]:
         #         one_battery['summary'].append(summary['QD'][cyc - 1])

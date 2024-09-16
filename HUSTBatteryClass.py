@@ -6,9 +6,45 @@ Github: https://github.com/wang-fujin
 Description:
 该代码用于读取同济大学公开的电池数据集，方便后续预处理和分析。
 '''
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import functools
+import pickle
+from scipy import interpolate
+
+
+
+def interpolate_resample(resample=True, num_points=128):
+    '''
+    插值重采样装饰器,如果resample为True，那么就进行插值重采样，点数为num_points,默认为128；
+    否则就不进行重采样
+    :param resample: bool: 是否进行重采样
+    :param num_points: int: 重采样的点数
+    :return:
+    '''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self,*args, **kwargs):
+            data = func(self,*args, **kwargs)
+            new_df = pd.DataFrame()
+
+            if resample:
+                x = np.linspace(0, 1, data.shape[0])
+                new_x = np.linspace(0, 1, num_points)
+                for k in data:
+                    if k == 'Status':
+                        continue
+                    try:
+                        f1 = interpolate.interp1d(x, data[k], kind='linear')
+                        new_df[k] = f1(new_x)
+                    except ValueError:
+                        print(data.shape[0])
+            return new_df
+        return wrapper
+    return decorator
 
 
 class Battery:
@@ -88,6 +124,16 @@ class Battery:
         value = cycle_df[variable]
         return value
 
+    # @interpolate_resample(resample=True, num_points=245)  #batch-1
+    # @interpolate_resample(resample=True, num_points=233)  #batch-2
+    # @interpolate_resample(resample=True, num_points=216)  # batch-3
+    # @interpolate_resample(resample=True, num_points=234)  # batch-4
+    # @interpolate_resample(resample=True, num_points=249)  # batch-5
+    # @interpolate_resample(resample=True, num_points=240)  # batch-6
+    # @interpolate_resample(resample=True, num_points=230)  # batch-7
+    # @interpolate_resample(resample=True, num_points=244)  #batch-8
+    @interpolate_resample(resample=True, num_points=223)  #batch-9
+    # @interpolate_resample(resample=True, num_points=229)  # batch-10
     def get_CCCV_stage(self,cycle):
         '''
         获取第cycle次循环的CCCV阶段的数据
@@ -97,6 +143,9 @@ class Battery:
         self._check(cycle)
         cycle_df = self.get_cycle(cycle)
         CCCV_df = cycle_df.loc[cycle_df['Status']=='Constant current-constant voltage charge',:]
+
+        if CCCV_df.shape[0] < 50:
+            print(f'Cycle: {cycle} get error!')
         return CCCV_df
 
     def get_CC_stage(self,cycle,voltage_range=None):
@@ -218,16 +267,45 @@ class Battery:
         plt.show()
 
 
+def save_all_battery2pkl(filepath, all_battery):
+    # Note that all_battery is a dictionary contains different Battery.
+    with open(filepath, 'wb') as fp:
+        pickle.dump(all_battery, fp)
+    print("file to pkl finished!")
+
+
 if __name__ == '__main__':
     # 一个简单的例子
-    path = '../our_data/1-1.pkl'
-    battery = Battery(path)
-    capacity = battery.get_degradation_trajectory()
-    plt.plot(capacity)
-    plt.show()
+    # change the number below for implementing different batteries.
+    folder_path = r'data/hust/batch-9'
+    save_path = 'data/hust/result/'
+    key_name = ['Current (mA)', 'voltage (V)', 'capacity (mAh)']
+    all_bat_dict = {}
+    battery_average_len = []
 
-    battery.plot_one_cycle(1500)
-    battery.plot_one_cycle_CCCV(1500)
+    bat_idx = 1
+    for filename in os.listdir(folder_path):
+        filepath = os.path.join(folder_path, filename)
+        battery = Battery(filepath)
+
+        print(filename)
+        one_bat_dict = {}
+        one_battery_len = []
+        one_bat_dict['summary'] = list(battery.dq.values())
+        one_bat_dict['cycle'] = {}
+        for cyc in range(1, battery.cycle_life):
+            one_bat_dict['cycle'][cyc - 1] = {}
+            for key in key_name:
+                one_bat_dict['cycle'][cyc - 1][key] = battery.get_CCCV_stage(cyc)
+            one_battery_len.append(one_bat_dict['cycle'][cyc - 1]['Current (mA)'].shape[0])
+        all_bat_dict[bat_idx] = one_bat_dict
+        bat_idx += 1
+
+        battery_average_len.append(sum(one_battery_len) / len(one_battery_len))
+
+    os.makedirs(save_path, exist_ok=True)
+    filepath = os.path.join(save_path, 'HUST_batch9_prepocess.pkl')
+    save_all_battery2pkl(filepath, all_bat_dict)
 
 
 

@@ -163,7 +163,7 @@ class Battery:
         return value
 
     # 如果需要重采样，则取消下面这行注释
-    # @interpolate_resample(resample=False,num_points=128)
+    # @interpolate_resample(resample=False, num_points=1000)
     def get_CC_value(self, cycle, variable, voltage_range=None):
         '''
         获取第cycle个充电的周期的CC过程中的variable的值;如果指定了voltage_range,那么就是在voltage_range范围内的值
@@ -179,6 +179,11 @@ class Battery:
         else:
             index = np.where((voltage >= voltage_range[0]) & (voltage <= voltage_range[1]))[0]
         value = value[index]
+
+        if value.shape[0] < 500:
+            print(f"cycle:{cycle}, variable:{variable}")
+            print('len is: ', value.shape[0])
+
         return value
 
     # 如果需要重采样，则取消下面这行注释
@@ -202,7 +207,7 @@ class Battery:
         return value
 
     # 如果需要重采样，则取消下面这行注释
-    # @interpolate_resample(resample=True, num_points=3052)
+    @interpolate_resample(resample=True, num_points=3000)
     def get_CCCV_value(self, cycle, variable, current_range=None):
         CCCV_df = np.concatenate((self.get_CC_value(cycle, variable), self.get_CV_value(cycle, variable)), axis=0)
         if CCCV_df.shape[0] < 1500:
@@ -291,10 +296,11 @@ def save_all_battery2pkl(filepath, all_battery):
 if __name__ == '__main__':
     # 一个简单的例子
 
-    folder_path = r'../cell_data/Battery Dataset/Batch-2'
+    folder_path = r'../xjtu_dataset/Batch-5'
     save_path = 'data/'
     # 现在假设每次均取一个batch
     key_name = ['current_A', 'voltage_V', 'capacity_Ah', 'temperature_C']
+    # key_name = ['current_A', 'voltage_V', 'temperature_C']
 
     batch_dict = {}
     battery_average_len = []
@@ -325,7 +331,7 @@ if __name__ == '__main__':
         batch_dict[filename.rstrip(".mat")] = one_battery_dict
 
     os.makedirs(save_path, exist_ok=True)
-    filepath = os.path.join(save_path, 'XJTU_batch2_prepocess.pkl')
+    filepath = os.path.join(save_path, 'XJTU_batch5_compressed.pkl')
     save_all_battery2pkl(filepath, batch_dict)
 
     # IC1, V1 = battery.get_IC_curve1(cycle=10, voltage_range=[3.6, 4.19])

@@ -3,3 +3,6 @@ data/
 batch1_prepocess.pkl
 batch2_prepocess.pkl
 batch3_prepocess.pkl
+.gitignore
+.rsyncignore
+__pycache__/
