@@ -2,10 +2,10 @@
 A code library for reading and preprocessing public battery dataset
 
 ## 1.简介（Introduction）
-本代码库修改自项目![Battery-dataset-preprocessing-code-library](https://github.com/wang-fujin/Battery-dataset-preprocessing-code-library)，并将其设计为了适用于锂离子电池SOH预测的数据预处理部分，
+本代码库修改自项目[Battery-dataset-preprocessing-code-library](https://github.com/wang-fujin/Battery-dataset-preprocessing-code-library)，并将其设计为了适用于锂离子电池SOH预测的数据预处理部分，
 同时此仓库解决了原仓库的一些小问题，将电池数据选取过程完善，支持使用者以快速、简便的方式来处理电池数据。
 
-This code base was modified from Project ![Battery-dataset-preprocessing-code-library](https://github.com/wang-fujin/Battery-dataset-preprocessing-code-library) and is designed to be applicable to the Li-ion battery SOH prediction data preprocessing part.
+This code base was modified from Project [Battery-dataset-preprocessing-code-library](https://github.com/wang-fujin/Battery-dataset-preprocessing-code-library) and is designed to be applicable to the Li-ion battery SOH prediction data preprocessing part.
 At the same time, this repository solves some minor problems of the original repository, perfects the battery data selection process, and supports users to process battery data in a fast and easy way.
 
 ## 2. 数据集（Datasets）
